@@ -46,7 +46,7 @@ class Placeholder : public Node<T>{
     }
 };
 
-template <typename TYPE, typename I>
+template <typename TYPE>
 class Constant: public Placeholder<TYPE>{
   private:
     TYPE value;
@@ -55,7 +55,7 @@ class Constant: public Placeholder<TYPE>{
     std::vector<Node<TYPE> *> parents; // Shouldn't this be Operator instead?
   public:
 
-    Constant(I val){
+    Constant(float val){
       TYPE num{val};
       value = num;
     }
@@ -184,7 +184,7 @@ class Variable: public Placeholder<TYPE>{
     inline static int count;
     Variable () {}
     
-    Variable(auto val){
+    Variable(float val){
       TYPE num{val};
       value = num;
       count++;
@@ -225,6 +225,18 @@ class Variable: public Placeholder<TYPE>{
         return child->getValue();
       }
         return value;
+    }
+
+
+
+    template<typename current_type>
+    current_type getValue2(){
+      if(child)
+      {
+        TYPE curr_value = child->getValue();
+        return static_cast<current_type>(curr_value);
+      }
+        return static_cast<current_type>(this->value);
     }
 
     template<typename old_type>
@@ -417,54 +429,54 @@ Variable<T> &operator/( Node<T> &a,  Node<T> &b){
   return *z;
 }
 
-template<typename T>
-class Expression{
+// template<typename T>
+// class Expression{
 
-  private:
-  Node<T> *root_node;
-  std::set<int> visited_nodes;
-  std::vector<Node<T> *> ordering;
-  public:
-  Expression(Node<T> &rhs_node){root_node = &rhs_node;}
+//   private:
+//   Node<T> *root_node;
+//   std::set<int> visited_nodes;
+//   std::vector<Node<T> *> ordering;
+//   public:
+//   Expression(Node<T> &rhs_node){root_node = &rhs_node;}
 
-  Expression<T> * operator<<=( Node<T> &rhs_node){
-    // std::cout<< " Assignment operator called\n";
-    root_node = &rhs_node;
-    // topological_sort(*root_node);
-    return this;
-  }
+//   Expression<T> * operator<<=( Node<T> &rhs_node){
+//     // std::cout<< " Assignment operator called\n";
+//     root_node = &rhs_node;
+//     // topological_sort(*root_node);
+//     return this;
+//   }
 
 
 
-  void print_expr_top_sort(){
+//   void print_expr_top_sort(){
     
-    if(visited_nodes.find(root_node->get_unq_node_idx()) == visited_nodes.end()) // If curr_node is not visited
-    {
-      visited_nodes.insert(root_node->get_unq_node_idx());
+//     if(visited_nodes.find(root_node->get_unq_node_idx()) == visited_nodes.end()) // If curr_node is not visited
+//     {
+//       visited_nodes.insert(root_node->get_unq_node_idx());
 
-      if(root_node->isPlaceholder == false){
+//       if(root_node->isPlaceholder == false){
 
-        Operator<T> * curr_op_parent =static_cast<Operator<T> *>(root_node);
+//         Operator<T> * curr_op_parent =static_cast<Operator<T> *>(root_node);
 
-        for(Node<T> *curr_child: curr_op_parent->getInputs())
-        {
-          topological_sort(*curr_child);
-        }
-      }
-      // ordering.push_back(&curr_node);
-      // std::cout << root_node->get_unq_node_idx() <<"\t";
-    }
-  }
+//         for(Node<T> *curr_child: curr_op_parent->getInputs())
+//         {
+//           topological_sort(*curr_child);
+//         }
+//       }
+//       // ordering.push_back(&curr_node);
+//       // std::cout << root_node->get_unq_node_idx() <<"\t";
+//     }
+//   }
 
-  T getValue(){
-    root_node->getValue();
-  }
+//   T getValue(){
+//     root_node->getValue();
+//   }
 
-  Node<T> &getRootNode()
-  {
-    return root_node;
-  }
-};
+//   Node<T> &getRootNode()
+//   {
+//     return root_node;
+//   }
+// };
 // template <typename T>
 // Node<T> &operator+( Node<T> &a,  Expression<T> &b){
 
