@@ -169,12 +169,31 @@ class Operator : public Node<T>{
 
 };
 
+
+
+// class SizeTest{
+//   public:
+//   fpm::fixed_16_16 value;
+//   fpm::fixed_16_16 *parent;
+//   fpm::fixed_16_16 child;
+//   Node<float> * child2 = nullptr; // 4 bytes
+//   std::vector<Node<float> *> parents; // 12 bytes
+
+
+//   int add()
+//   {
+//     int a;
+//     int b;
+//     return 0;
+//   }
+// };
+
 template <typename TYPE>
 class Variable: public Placeholder<TYPE>{
   private:
     
     // std::string name;
-    TYPE gradient;
+    // TYPE gradient;
     
   public:
     TYPE value;

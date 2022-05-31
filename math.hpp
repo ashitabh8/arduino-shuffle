@@ -2,11 +2,15 @@
 #define FPM_MATH_HPP
 
 #include "fixed.hpp"
+//#include "log2fix.h" 
+//#include "log2fix.hpp"
 #include <cmath>
 
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
+#include <assert.h>
+#include <vector>
 
 namespace fpm
 {
@@ -18,23 +22,15 @@ namespace detail
 {
 
 // Returns the index of the most-signifcant set bit
-inline long find_highest_bit(unsigned long long value) noexcept
+inline long find_highest_bit(unsigned long value) noexcept
 {
     assert(value != 0);
 #if defined(_MSC_VER)
     unsigned long index;
-#if defined(_WIN64)
-    _BitScanReverse64(&index, value);
-#else
-    if (_BitScanReverse(&index, static_cast<unsigned long>(value >> 32)) != 0) {
-        index += 32;
-    } else {
-        _BitScanReverse(&index, static_cast<unsigned long>(value & 0xfffffffflu));
-    }
-#endif
+    _BitScanReverse(&index, value);
     return index;
 #elif defined(__GNUC__) || defined(__clang__)
-    return sizeof(value) * 8 - 1 - __builtin_clzll(value);
+    return sizeof(value) * 8 - 1 - __builtin_clzl(value);
 #else
 #   error "your platform does not support find_highest_bit()"
 #endif
@@ -71,9 +67,9 @@ constexpr inline bool isnan(fixed<B, I, F>) noexcept
 }
 
 template <typename B, typename I, unsigned int F>
-constexpr inline bool isnormal(fixed<B, I, F> x) noexcept
+constexpr inline bool isnormal(fixed<B, I, F>) noexcept
 {
-    return x.raw_value() != 0;
+    return true;
 }
 
 template <typename B, typename I, unsigned int F>
@@ -117,6 +113,10 @@ constexpr inline bool isunordered(fixed<B, I, F> x, fixed<B, I, F> y) noexcept
 {
     return false;
 }
+
+
+
+
 
 //
 // Nearest integer operations
@@ -173,6 +173,14 @@ constexpr inline fixed<B, I, F> rint(fixed<B, I, F> x) noexcept
     // Rounding mode is assumed to be FE_TONEAREST
     return nearbyint(x);
 }
+
+
+template <typename B, typename I, unsigned int F>
+inline bool is_int(fixed<B, I, F> x) noexcept
+{
+    return x.raw_value() == rint<B,I,F>(x).raw_value();
+}
+
 
 //
 // Mathematical functions
@@ -243,6 +251,30 @@ inline fixed<B, I, F> modf(fixed<B, I, F> x, fixed<B, I, F>* iptr) noexcept
     return fixed<B, I, F>::from_raw_value(raw % FRAC);
 }
 
+//factorial function !
+template <typename B, typename I, unsigned int F>
+inline fixed<B, I, F> factorial(fixed<B, I, F> x) //noexcept
+{
+
+    assert(is_int(x));  
+    using Fixed = fixed<B, I, F>;
+
+    Fixed zero_ = Fixed::from_raw_value(B{0});
+    Fixed one_ = Fixed::from_raw_value(B{1} << F);
+
+    // 0! = 1
+    if (x.raw_value() == 0){
+	return one_;
+    }
+
+    Fixed one_less = x - one_;
+    Fixed prod = x;
+    while (one_less > zero_){
+	prod = prod * one_less;
+	one_less = one_less - one_;
+    }
+    return prod;
+}
 
 //
 // Power functions
@@ -252,6 +284,7 @@ template <typename B, typename I, unsigned int F, typename T, typename std::enab
 fixed<B, I, F> pow(fixed<B, I, F> base, T exp) noexcept
 {
     using Fixed = fixed<B, I, F>;
+    constexpr auto FRAC = B(1) << F;
 
     if (base == Fixed(0)) {
         assert(exp > 0);
@@ -363,33 +396,71 @@ template <typename B, typename I, unsigned int F>
 fixed<B, I, F> log2(fixed<B, I, F> x) noexcept
 {
     using Fixed = fixed<B, I, F>;
-    assert(x > Fixed(0));
 
+    if (x <= Fixed(0)) {
+        return log2(std::numeric_limits<Fixed>::epsilon());
+    }
+    
     // Normalize input to the [1:2] domain
     B value = x.raw_value();
     const long highest = detail::find_highest_bit(value);
+
     if (highest >= F) {
         value >>= (highest - F);
     } else {
         value <<= (F - highest);
     }
+
     x = Fixed::from_raw_value(value);
-    assert(x >= Fixed(1) && x < Fixed(2));
+    // assert(x >= Fixed(1) && x < Fixed(2));
 
     constexpr auto fA = Fixed::template from_fixed_point<63>(  413886001457275979ll); //  4.4873610194131727e-2
     constexpr auto fB = Fixed::template from_fixed_point<63>(-3842121857793256941ll); // -4.1656368651734915e-1
-    constexpr auto fC = Fixed::template from_fixed_point<62>( 7522345947206307744ll); //  1.6311487636297217
-    constexpr auto fD = Fixed::template from_fixed_point<61>(-8187571043052183818ll); // -3.5507929249026341
-    constexpr auto fE = Fixed::template from_fixed_point<60>( 5870342889289496598ll); //  5.0917108110420042
-    constexpr auto fF = Fixed::template from_fixed_point<61>(-6457199832668582866ll); // -2.8003640347009253
-    return Fixed(highest - F) + (((((fA * x + fB) * x + fC) * x + fD) * x + fE) * x + fF);
+
+    #ifdef BIG_DATA
+        return Fixed(highest - F) + (fA * x + fB);
+    #else
+        constexpr auto fC = Fixed::template from_fixed_point<62>( 7522345947206307744ll); //  1.6311487636297217
+        constexpr auto fD = Fixed::template from_fixed_point<61>(-8187571043052183818ll); // -3.5507929249026341
+        constexpr auto fE = Fixed::template from_fixed_point<60>( 5870342889289496598ll); //  5.0917108110420042
+        constexpr auto fF = Fixed::template from_fixed_point<61>(-6457199832668582866ll); // -2.8003640347009253
+        return Fixed(highest - F) + (((((fA * x + fB) * x + fC) * x + fD) * x + fE) * x + fF);
+    #endif
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// These should be faster by 4-5x
+/*template <typename B, typename I, unsigned int F>
+fixed<B, I, F> log2_v2(fixed<B, I, F> x) noexcept
+{
+    using Fixed = fixed<B, I, F>;
+
+    if (x <= Fixed(0)) {
+        return log2(std::numeric_limits<Fixed>::epsilon());
+    }
+    auto res = log2fix(x.raw_value(),F);
+    //return Fixed::from_raw_value((res));
+    return Fixed::from_raw_value(static_cast<B>(res));
+}
+
+
+template <typename B, typename I, unsigned int F>
+fixed<B, I, F> log_v2(fixed<B, I, F> x) noexcept
+{
+    using Fixed = fixed<B, I, F>;
+    //return log2_v2(x) / log2_v2(Fixed::e());
+    return log2_v2(x) / (Fixed::e() / Fixed(2));
+}*/
+////////////////////////////////////////////////////////////////////////////////
 
 template <typename B, typename I, unsigned int F>
 fixed<B, I, F> log(fixed<B, I, F> x) noexcept
 {
     using Fixed = fixed<B, I, F>;
-    return log2(x) / log2(Fixed::e());
+    //return log2(x) / log2(Fixed::e());
+    return log2(x) * Fixed(0.7);
+
 }
 
 template <typename B, typename I, unsigned int F>
@@ -462,38 +533,42 @@ fixed<B, I, F> sqrt(fixed<B, I, F> x) noexcept
 {
     using Fixed = fixed<B, I, F>;
 
-    assert(x >= Fixed(0));
-    if (x == Fixed(0))
-    {
-        return x;
-    }
+    // Newton's method 
 
-    // Finding the square root of an integer in base-2, from:
-    // https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Binary_numeral_system_.28base_2.29
+    Fixed  res = Fixed(1.0);
 
-    // Shift by F first because it's fixed-point.
-    I num = I{x.raw_value()} << F;
-    I res = 0;
+    // even 1 iteration gives decent accuracy 
+    // verify exactly how much we need
 
-    // "bit" starts at the greatest power of four that's less than the argument.
-    for (I bit = I{1} << ((detail::find_highest_bit(x.raw_value()) + F) / 2 * 2); bit != 0; bit >>= 2)
-    {
-        const I val = res + bit;
-        res >>= 1;
-        if (num >= val)
-        {
-            num -= val;
-            res += bit;
-        }
-    }
+    res -= (res*res - x) / (2*res);
+    res -= (res*res - x) / (2*res);
 
-    // Round the last digit up if necessary
-    if (num > res)
-    {
-        res++;
-    }
+    return res;
 
-    return Fixed::from_raw_value(static_cast<B>(res));
+    // Binary Search 
+
+    // Fixed low = Fixed(0);
+
+    // // change this
+    // Fixed high = x;
+
+    // Fixed eps = Fixed(0.01);
+
+    // while (low + eps < high)
+    // {   
+    //     Fixed mid = (low + high) / 2;
+
+    //     // std :: cout << mid.raw_value() << ' ' << low.raw_value() << ' ' << high.raw_value() << std :: endl;
+    //     if (mid*mid > x){
+    //         high = mid;
+    //     }
+    //     else {
+    //         low = mid;
+    //     }
+    // } 
+
+    // return low;
+
 }
 
 template <typename B, typename I, unsigned int F>
@@ -549,6 +624,8 @@ inline fixed<B, I, F> cos(fixed<B, I, F> x) noexcept
 template <typename B, typename I, unsigned int F>
 inline fixed<B, I, F> tan(fixed<B, I, F> x) noexcept
 {
+    using Fixed = fixed<B, I, F>;
+
     auto cx = cos(x);
 
     // Tangent goes to infinity at 90 and -90 degrees.
@@ -556,58 +633,6 @@ inline fixed<B, I, F> tan(fixed<B, I, F> x) noexcept
     assert(abs(cx).raw_value() > 1);
 
     return sin(x) / cx;
-}
-
-namespace detail {
-
-// Calculates atan(x) assuming that x is in the range [0,1]
-template <typename B, typename I, unsigned int F>
-fixed<B, I, F> atan_sanitized(fixed<B, I, F> x) noexcept
-{
-    using Fixed = fixed<B, I, F>;
-    assert(x >= Fixed(0) && x <= Fixed(1));
-
-    constexpr auto fA = Fixed::template from_fixed_point<63>(  716203666280654660ll); //  0.0776509570923569
-    constexpr auto fB = Fixed::template from_fixed_point<63>(-2651115102768076601ll); // -0.287434475393028
-    constexpr auto fC = Fixed::template from_fixed_point<63>( 9178930894564541004ll); //  0.995181681698119  (PI/4 - A - B)
-
-    const auto xx = x * x;
-    return ((fA*xx + fB)*xx + fC)*x;
-}
-
-// Calculate atan(y / x), assuming x != 0.
-//
-// If x is very, very small, y/x can easily overflow the fixed-point range.
-// If q = y/x and q > 1, atan(q) would calculate atan(1/q) as intermediate step
-// anyway. We can shortcut that here and avoid the loss of information, thus
-// improving the accuracy of atan(y/x) for very small x.
-template <typename B, typename I, unsigned int F>
-fixed<B, I, F> atan_div(fixed<B, I, F> y, fixed<B, I, F> x) noexcept
-{
-    using Fixed = fixed<B, I, F>;
-    assert(x != Fixed(0));
-
-    // Make sure y and x are positive.
-    // If y / x is negative (when y or x, but not both, are negative), negate the result to
-    // keep the correct outcome.
-    if (y < Fixed(0)) {
-        if (x < Fixed(0)) {
-            return atan_div(-y, -x);
-        }
-        return -atan_div(-y, x);
-    }
-    if (x < Fixed(0)) {
-        return -atan_div(y, -x);
-    }
-    assert(y >= Fixed(0));
-    assert(x >  Fixed(0));
-
-    if (y > x) {
-        return Fixed::half_pi() - detail::atan_sanitized(x / y);
-    }
-    return detail::atan_sanitized(y / x);
-}
-
 }
 
 template <typename B, typename I, unsigned int F>
@@ -621,10 +646,15 @@ fixed<B, I, F> atan(fixed<B, I, F> x) noexcept
 
     if (x > Fixed(1))
     {
-        return Fixed::half_pi() - detail::atan_sanitized(Fixed(1) / x);
+        return Fixed::half_pi() - atan(Fixed(1) / x);
     }
 
-    return detail::atan_sanitized(x);
+    constexpr auto fA = Fixed::template from_fixed_point<63>(  716203666280654660ll); //  0.0776509570923569
+    constexpr auto fB = Fixed::template from_fixed_point<63>(-2651115102768076601ll); // -0.287434475393028
+    constexpr auto fC = Fixed::template from_fixed_point<63>( 9178930894564541004ll); //  0.995181681698119  (PI/4 - A - B)
+
+    const auto xx = x * x;
+    return ((fA*xx + fB)*xx + fC)*x;
 }
 
 template <typename B, typename I, unsigned int F>
@@ -638,7 +668,7 @@ fixed<B, I, F> asin(fixed<B, I, F> x) noexcept
     {
         return copysign(Fixed::half_pi(), x);
     }
-    return detail::atan_div(x, sqrt(yy));
+    return atan(x / sqrt(yy));
 }
 
 template <typename B, typename I, unsigned int F>
@@ -652,7 +682,7 @@ fixed<B, I, F> acos(fixed<B, I, F> x) noexcept
         return Fixed::pi();
     }
     const auto yy = Fixed(1) - x * x;
-    return Fixed(2)*detail::atan_div(sqrt(yy), Fixed(1) + x);
+    return Fixed(2)*atan(sqrt(yy) / (Fixed(1) + x));
 }
 
 template <typename B, typename I, unsigned int F>
@@ -664,15 +694,67 @@ fixed<B, I, F> atan2(fixed<B, I, F> y, fixed<B, I, F> x) noexcept
         assert(y != Fixed(0));
         return (y > Fixed(0)) ? Fixed::half_pi() : -Fixed::half_pi();
     }
-
-    auto ret = detail::atan_div(y, x);
-
+    auto ret = atan(y / x);
     if (x < Fixed(0))
     {
         return (y >= Fixed(0)) ? ret + Fixed::pi() : ret - Fixed::pi();
     }
     return ret;
 }
+
+
+
+template <typename B, typename I, unsigned int F>
+fixed<B, I, F> get_mean_aux(std::vector<fixed<B, I, F> > data,int iLeft, int iRight){
+
+	assert(iRight >= iLeft);
+
+	using Fixed = fixed<B, I, F>;
+	//std::cout << "called" << std::endl;
+	Fixed sum = Fixed(0);
+	Fixed count = Fixed(0);
+	Fixed one_ = Fixed(1);
+
+	for (int i=iLeft; i < iRight; i++){
+		sum += data[i];
+		count = count + one_;
+	}
+	auto res = (sum/count);
+	//std::cout << res << std::endl;
+	return res;
+}
+
+
+template <typename B, typename I, unsigned int F>
+fixed<B, I, F> get_mean(std::vector<fixed<B, I, F> > data, int iLeft, int iRight){
+
+	assert(iRight > iLeft);
+
+	using Fixed = fixed<B, I, F>;
+
+	int size = iRight-iLeft;
+	//base case
+	if (size < 20){
+		return get_mean_aux(data,iLeft,iRight);
+	}
+
+	int cut_point = size/2+iLeft;
+	Fixed mean1 = get_mean(data,iLeft,cut_point);
+	int size1 = cut_point - iLeft;
+	Fixed mean2 = get_mean(data,cut_point,iRight);
+	int size2 = iRight-(cut_point);
+
+	Fixed converted_size1 = Fixed(size1);
+	Fixed converted_size2 = Fixed(size2);
+
+	Fixed weighted_sum1 = ((converted_size1/(converted_size1+converted_size2))*mean1);
+	Fixed weighted_sum2 = ((converted_size2/(converted_size1+converted_size2))*mean2);
+	
+	return  (weighted_sum1 + weighted_sum2); 
+}
+
+
+
 
 }
 

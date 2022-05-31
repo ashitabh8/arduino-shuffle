@@ -7,22 +7,35 @@
 #include <functional>
 #include <limits>
 #include <type_traits>
+#include <stdint.h>
+#ifdef DEBUG
+#include <string>
+#include <autoppl/globals.hpp>
+#include <testutil/stacktrace.h>
+#include <stdio.h>
+#endif
 
 namespace fpm
 {
+
+//Added to leverage type_traits std::is_base_of()
+struct fixedpoint_base {};
+//struct Int {};
+//struct Real {};
 
 //! Fixed-point number type
 //! \tparam BaseType         the base integer type used to store the fixed-point number. This can be a signed or unsigned type.
 //! \tparam IntermediateType the integer type used to store intermediate results during calculations.
 //! \tparam FractionBits     the number of bits of the BaseType used to store the fraction
 template <typename BaseType, typename IntermediateType, unsigned int FractionBits>
-class fixed
+class fixed : fixedpoint_base
 {
     static_assert(std::is_integral<BaseType>::value, "BaseType must be an integral type");
+    static_assert(std::is_signed<BaseType>::value, "BaseType must be signed");
     static_assert(FractionBits > 0, "FractionBits must be greater than zero");
     static_assert(FractionBits <= sizeof(BaseType) * 8, "BaseType must at least be able to contain entire fraction");
     static_assert(FractionBits <= 62, "Fraction may be no more than 62 bits");
-    static_assert(sizeof(IntermediateType) >= sizeof(BaseType), "IntermediateType must be larger than BaseType");
+    static_assert(sizeof(IntermediateType) > sizeof(BaseType), "IntermediateType must be larger than BaseType");
     static_assert(std::is_signed<IntermediateType>::value == std::is_signed<BaseType>::value, "IntermediateType must have same signedness as BaseType");
 
     static constexpr BaseType FRACTION_MULT = BaseType(1) << FractionBits;
@@ -31,27 +44,60 @@ class fixed
     constexpr inline fixed(BaseType val, raw_construct_tag) noexcept : m_value(val) {}
 
 public:
+    using base_type = BaseType;
+    static const int fractional_bits = FractionBits;        //WATCH OUT FOR THIS....
+    static const int integer_bits = 32 - fractional_bits;  // hardcoded for now
+
     inline fixed() noexcept {}
+    
+    template <unsigned int F, typename std::enable_if<(F > FractionBits)>::type* = nullptr>
+    constexpr inline operator fixed<BaseType, IntermediateType, F>() noexcept {
+        BaseType val = (m_value << (F - FractionBits));
+
+        return fixed<BaseType, IntermediateType, F>::from_raw_value(val);        
+    }
+
+    template <unsigned int F, typename std::enable_if<(F < FractionBits)>::type* = nullptr>
+    constexpr inline operator fixed<BaseType, IntermediateType, F>() noexcept {
+        BaseType val = (m_value  >> (FractionBits - F));
+
+        return fixed<BaseType, IntermediateType, F>::from_raw_value(val);
+    }
+
+    template <typename B, typename I, unsigned int F, typename std::enable_if<(sizeof(B) < sizeof(BaseType))>::type * = nullptr>
+    constexpr inline operator fixed<B, I, F>() noexcept
+    {
+        // std::cout << "Casting from lower to higher fixed point not implemented yet\n";
+        BaseType val = 0;
+        return fixed<B, I, F>::from_raw_value(val);
+    }
+
+    template <typename B, typename I, unsigned int F, typename std::enable_if<(sizeof(B) > sizeof(BaseType))>::type * = nullptr>
+    constexpr inline operator fixed<B, I, F>() noexcept
+    {
+        unsigned b = sizeof(BaseType) - sizeof(B); 
+        BaseType val = m_value;
+        int const mask = 1U << (b - 1);
+        val = (val & ((1U << b) - 1));
+        val = ((val) ^ mask) - mask;
+        val <<= (F - FractionBits);
+
+        return fixed<B, I, F>::from_raw_value(val);
+    }
+
 
     // Converts an integral number to the fixed-point type.
     // Like static_cast, this truncates bits that don't fit.
     template <typename T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr>
-    constexpr inline explicit fixed(T val) noexcept
+    constexpr inline fixed(T val) noexcept
         : m_value(static_cast<BaseType>(val * FRACTION_MULT))
     {}
 
     // Converts an floating-point number to the fixed-point type.
     // Like static_cast, this truncates bits that don't fit.
     template <typename T, typename std::enable_if<std::is_floating_point<T>::value>::type* = nullptr>
-    constexpr inline explicit fixed(T val) noexcept
-        : m_value(static_cast<BaseType>((val >= 0.0) ? (val * FRACTION_MULT + T{0.5}) : (val * FRACTION_MULT - T{0.5})))
-    {}
-
-    // Constructs from another fixed-point type with possibly different underlying representation.
-    // Like static_cast, this truncates bits that don't fit.
-    template <typename B, typename I, unsigned int F>
-    constexpr inline explicit fixed(fixed<B,I,F> val) noexcept
-        : m_value(from_fixed_point<F>(val.raw_value()).raw_value())
+    constexpr inline fixed(T val) noexcept
+        : m_value(static_cast<BaseType>(std::round(val * FRACTION_MULT)))
     {}
 
     // Explicit conversion to a floating-point type
@@ -115,6 +161,19 @@ public:
     //
     // Arithmetic member operators
     //
+    template <unsigned int F, typename std::enable_if<(F > FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        
+        this->m_value = (rhs.raw_value() / (BaseType(1) << (F - FractionBits)) +
+            (rhs.raw_value() / (BaseType(1) << (F - FractionBits - 1)) % 2));
+        return *this;
+    }
+
+    template <unsigned int F, typename std::enable_if<(F < FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        this->m_value = rhs.raw_value() * (BaseType(1) << (FractionBits - F));
+        return *this;
+    }
 
     constexpr inline fixed operator-() const noexcept
     {
@@ -123,69 +182,280 @@ public:
 
     inline fixed& operator+=(const fixed& y) noexcept
     {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
         m_value += y.m_value;
+        #ifdef DEBUG
+        check_plus_overload(old_m_value, m_value, y.m_value);
+        #endif
         return *this;
     }
 
     template <typename I, typename std::enable_if<std::is_integral<I>::value>::type* = nullptr>
     inline fixed& operator+=(I y) noexcept
     {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+
         m_value += y * FRACTION_MULT;
+        #ifdef DEBUG
+        check_plus_overload(old_m_value, m_value, y * FRACTION_MULT);
+        #endif
+        
+        return *this;
+    }
+
+    template <unsigned int F, typename std::enable_if<(F > FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator+=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+        BaseType y_m_value = (rhs.raw_value() / (BaseType(1) << (F - FractionBits)) +
+            (rhs.raw_value() / (BaseType(1) << (F - FractionBits - 1)) % 2));
+        this->m_value += y_m_value;
+        #ifdef DEBUG
+        check_plus_overload(old_m_value, m_value, y_m_value);
+        #endif
+        return *this;
+    }
+
+    template <unsigned int F, typename std::enable_if<(F < FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator+=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+        BaseType y_m_value = rhs.raw_value() * (BaseType(1) << (FractionBits - F));
+        this->m_value += y_m_value;
+        #ifdef DEBUG
+        check_plus_overload(old_m_value, m_value, y_m_value);
+        #endif
         return *this;
     }
 
     inline fixed& operator-=(const fixed& y) noexcept
     {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
         m_value -= y.m_value;
+        #ifdef DEBUG
+        check_minus_overload(old_m_value, m_value, y.m_value);
+        #endif
         return *this;
     }
 
     template <typename I, typename std::enable_if<std::is_integral<I>::value>::type* = nullptr>
     inline fixed& operator-=(I y) noexcept
     {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
         m_value -= y * FRACTION_MULT;
+        #ifdef DEBUG
+        check_minus_overload(old_m_value, m_value, y * FRACTION_MULT);
+        #endif
         return *this;
     }
 
-    
-    
+    template <unsigned int F, typename std::enable_if<(F > FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator-=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+        BaseType y_m_value = (rhs.raw_value() / (BaseType(1) << (F - FractionBits)) +
+            (rhs.raw_value() / (BaseType(1) << (F - FractionBits - 1)) % 2));
+        this->m_value -= y_m_value;
+        #ifdef DEBUG
+        check_minus_overload(old_m_value, m_value, y_m_value);
+        #endif
+        return *this;
+    }
+
+    template <unsigned int F, typename std::enable_if<(F < FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator-=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+        BaseType y_m_value = rhs.raw_value() * (BaseType(1) << (FractionBits - F));
+        this->m_value -= y_m_value;
+        #ifdef DEBUG
+        check_minus_overload(old_m_value, m_value, y_m_value);
+        #endif
+        return *this;
+    }
+
+
     inline fixed& operator*=(const fixed& y) noexcept
     {
-        // Normal fixed-point multiplication is: x * y / 2**FractionBits.
-        // To correctly round the last bit in the result, we need one more bit of information.
-        // We do this by multiplying by two before dividing and adding the LSB to the real result.
-        auto value = (static_cast<IntermediateType>(m_value) * y.m_value) / (FRACTION_MULT / 2);
-        m_value = static_cast<BaseType>((value / 2) + (value % 2));
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+
+        auto value = (static_cast<IntermediateType>(m_value) * y.m_value) >> (FractionBits);
+        m_value = static_cast<BaseType>(value);
+
+        #ifdef DEBUG
+        check_mult_overload(old_m_value, m_value, value);
+        #endif
         return *this;
     }
 
     template <typename I, typename std::enable_if<std::is_integral<I>::value>::type* = nullptr>
     inline fixed& operator*=(I y) noexcept
     {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+
         m_value *= y;
+        #ifdef DEBUG
+        check_mult_overload(old_m_value, m_value, y);
+        #endif
+        return *this;
+    }
+
+    template <unsigned int F, typename std::enable_if<(F > FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator*=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+
+        BaseType y_m_value = (rhs.raw_value() / (BaseType(1) << (F - FractionBits)) +
+            (rhs.raw_value() / (BaseType(1) << (F - FractionBits - 1)) % 2));
+        auto value = (static_cast<IntermediateType>(m_value) * y_m_value) / (FRACTION_MULT / 2);
+        m_value = static_cast<BaseType>((value / 2) + (value % 2));
+        #ifdef DEBUG
+        check_mult_overload(old_m_value, m_value, y_m_value);
+        #endif
+        return *this;
+    }
+
+    template <unsigned int F, typename std::enable_if<(F < FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator*=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+
+        BaseType y_m_value = rhs.raw_value() * (BaseType(1) << (FractionBits - F));
+        auto value = (static_cast<IntermediateType>(m_value) * y_m_value) / (FRACTION_MULT / 2);
+        m_value = static_cast<BaseType>((value / 2) + (value % 2));
+        #ifdef DEBUG
+        check_mult_overload(old_m_value, m_value, y_m_value);
+        #endif
         return *this;
     }
 
     inline fixed& operator/=(const fixed& y) noexcept
     {
         assert(y.m_value != 0);
-        // Normal fixed-point division is: x * 2**FractionBits / y.
-        // To correctly round the last bit in the result, we need one more bit of information.
-        // We do this by multiplying by two before dividing and adding the LSB to the real result.
-        auto value = (static_cast<IntermediateType>(m_value) * FRACTION_MULT * 2) / y.m_value;
-        m_value = static_cast<BaseType>((value / 2) + (value % 2));
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+
+        auto value = (static_cast<IntermediateType>(m_value) << (FractionBits)) / y.m_value;
+        m_value = static_cast<BaseType>(value);
+
+        #ifdef DEBUG
+        check_div_overload(old_m_value, m_value, y.m_value);
+        #endif
         return *this;
     }
 
     template <typename I, typename std::enable_if<std::is_integral<I>::value>::type* = nullptr>
     inline fixed& operator/=(I y) noexcept
     {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
         m_value /= y;
+        #ifdef DEBUG
+        check_div_overload(old_m_value, m_value, y);
+        #endif
         return *this;
     }
 
+    template <unsigned int F, typename std::enable_if<(F > FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator/=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+        BaseType y_m_value = (rhs.raw_value() / (BaseType(1) << (F - FractionBits)) +
+            (rhs.raw_value() / (BaseType(1) << (F - FractionBits - 1)) % 2));
+        auto value = (static_cast<IntermediateType>(m_value) * FRACTION_MULT * 2) / y_m_value;
+        m_value = static_cast<BaseType>((value / 2) + (value % 2));
+        #ifdef DEBUG
+        check_div_overload(old_m_value, m_value, y_m_value);
+        #endif
+        return *this;
+    }
+
+    template <unsigned int F, typename std::enable_if<(F < FractionBits)>::type* = nullptr>
+    constexpr inline fixed& operator/=(const fixed<BaseType, IntermediateType, F>& rhs) {
+        #ifdef DEBUG
+        old_m_value = m_value;
+        #endif
+        BaseType y_m_value = rhs.raw_value() * (BaseType(1) << (FractionBits - F));
+        auto value = (static_cast<IntermediateType>(m_value) * FRACTION_MULT * 2) / y_m_value;
+        m_value = static_cast<BaseType>((value / 2) + (value % 2));
+        #ifdef DEBUG
+        check_div_overload(old_m_value, m_value, y_m_value);
+        #endif
+        return *this;
+    }
+
+    unsigned int frac_bits = FractionBits;
 private:
     BaseType m_value;
+
+    #ifdef DEBUG
+    // https://gcc.gnu.org/onlinedocs/gcc/Integer-Overflow-Builtins.html
+
+    BaseType old_m_value = BaseType();
+    void check_plus_overload(BaseType a, BaseType res, BaseType b) {
+        if (__builtin_add_overflow(a, b, &res)) {
+            // std::cout << "OH NO!\n";
+            globals::num_overflow_plus_equals += 1;
+            if (globals::plus_overflow_fp) {
+                fprintf(globals::plus_overflow_fp, "\n%d + %d = %d\n",a, b, res);
+                print_stacktrace(globals::plus_overflow_fp);
+            }
+        } else {
+            // std::cout << "YAY!\n";
+        }
+    }
+    void check_minus_overload(BaseType a, BaseType res, BaseType b) {
+        if (__builtin_sub_overflow(a, b, &res)) {
+            // std::cout << "OH NO!\n";
+            globals::num_overflow_minus_equals += 1;
+            if (globals::minus_overflow_fp) {
+                fprintf(globals::minus_overflow_fp, "\n%d - %d = %d\n",a, b, res);
+                print_stacktrace(globals::minus_overflow_fp);
+            }
+        } else {
+            // std::cout << "YAY!\n";
+        }
+
+    }
+    void check_mult_overload(IntermediateType a, IntermediateType res, IntermediateType b) {
+        if (__builtin_mul_overflow(a, b, &res)) {
+            // std::cout << "OH NO!\n";
+            globals::num_overflow_mult_equals += 1;
+            if (globals::mult_overflow_fp) {
+                fprintf(globals::mult_overflow_fp, "\n%d * %d = %d\n",a, b, res);
+                print_stacktrace(globals::mult_overflow_fp);
+            }
+
+        } else {
+            // std::cout << "YAY!\n";
+        }
+    }
+    void check_div_overload(BaseType a, BaseType res, BaseType b) {
+        // // std::cout << "DIV happened.\n";
+    }
+
+    #endif
 };
 
 //
@@ -195,6 +465,7 @@ private:
 using fixed_16_16 = fixed<std::int32_t, std::int64_t, 16>;
 using fixed_24_8 = fixed<std::int32_t, std::int64_t, 8>;
 using fixed_8_24 = fixed<std::int32_t, std::int64_t, 24>;
+using fixed_8_8 = fixed<std::int16_t, std::int32_t, 8>;
 
 //
 // Addition
@@ -218,6 +489,20 @@ constexpr inline fixed<B, I, F> operator+(T x, const fixed<B, I, F>& y) noexcept
     return fixed<B, I, F>(y) += x;
 }
 
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator+(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return y + fixed<B, I, F2>::from_raw_value((x.raw_value() >> (F - F2)));
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator+(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x + fixed<B, I, F>::from_raw_value((y.raw_value() >> (F2 - F)));
+}
+
 //
 // Subtraction
 //
@@ -226,14 +511,6 @@ template <typename B, typename I, unsigned int F>
 constexpr inline fixed<B, I, F> operator-(const fixed<B, I, F>& x, const fixed<B, I, F>& y) noexcept
 {
     return fixed<B, I, F>(x) -= y;
-}
-
-template <typename B, typename I, unsigned int F>
-constexpr inline fixed<B, I, F> operator%(fixed<B, I, F> x, fixed<B, I, F> y) noexcept
-{
-    return
-        assert(y.raw_value() != 0),
-        fixed<B, I, F>::from_raw_value(x.raw_value() % y.raw_value());
 }
 
 template <typename B, typename I, unsigned int F, typename T, typename std::enable_if<std::is_integral<T>::value>::type* = nullptr>
@@ -247,6 +524,21 @@ constexpr inline fixed<B, I, F> operator-(T x, const fixed<B, I, F>& y) noexcept
 {
     return fixed<B, I, F>(x) -= y;
 }
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator-(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return fixed<B, I, F2>::from_raw_value((x.raw_value() >> (F - F2))) - y;
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator-(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x - fixed<B, I, F>::from_raw_value((y.raw_value() >> (F2 - F)));
+}
+
 
 //
 // Multiplication
@@ -268,6 +560,20 @@ template <typename B, typename I, unsigned int F, typename T, typename std::enab
 constexpr inline fixed<B, I, F> operator*(T x, const fixed<B, I, F>& y) noexcept
 {
     return fixed<B, I, F>(y) *= x;
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator*(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return fixed<B, I, F2>::from_raw_value((x.raw_value() >> (F - F2))) * y;
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator*(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x * fixed<B, I, F>::from_raw_value((y.raw_value() >> (F2 - F)));
 }
 
 //
@@ -292,6 +598,21 @@ constexpr inline fixed<B, I, F> operator/(T x, const fixed<B, I, F>& y) noexcept
     return fixed<B, I, F>(x) /= y;
 }
 
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator/(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return fixed<B, I, F2>::from_raw_value((x.raw_value() >> (F - F2))) / y;
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator/(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x / fixed<B, I, F>::from_raw_value((y.raw_value() >> (F2 - F)));
+}
+
 //
 // Comparison operators
 //
@@ -302,10 +623,38 @@ constexpr inline bool operator==(const fixed<B, I, F>& x, const fixed<B, I, F>& 
     return x.raw_value() == y.raw_value();
 }
 
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator==(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return (x.raw_value() >> (F - F2)) == y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator==(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x.raw_value() == (y.raw_value() >> (F2 - F));
+}
+
 template <typename B, typename I, unsigned int F>
 constexpr inline bool operator!=(const fixed<B, I, F>& x, const fixed<B, I, F>& y) noexcept
 {
     return x.raw_value() != y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator!=(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return (x.raw_value() >> (F - F2)) != y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator!=(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x.raw_value() != (y.raw_value() >> (F2 - F));
 }
 
 template <typename B, typename I, unsigned int F>
@@ -314,10 +663,38 @@ constexpr inline bool operator<(const fixed<B, I, F>& x, const fixed<B, I, F>& y
     return x.raw_value() < y.raw_value();
 }
 
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator<(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return (x.raw_value() >> (F - F2)) < y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator<(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x.raw_value() > (y.raw_value() >> (F2 - F));
+}
+
 template <typename B, typename I, unsigned int F>
 constexpr inline bool operator>(const fixed<B, I, F>& x, const fixed<B, I, F>& y) noexcept
 {
     return x.raw_value() > y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator>(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return (x.raw_value() >> (F - F2)) > y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator>(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x.raw_value() > (y.raw_value() >> (F2 - F));
 }
 
 template <typename B, typename I, unsigned int F>
@@ -326,11 +703,48 @@ constexpr inline bool operator<=(const fixed<B, I, F>& x, const fixed<B, I, F>& 
     return x.raw_value() <= y.raw_value();
 }
 
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator<=(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return (x.raw_value() >> (F - F2)) <= y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator<=(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x.raw_value() <= (y.raw_value() >> (F2 - F));
+}
+
 template <typename B, typename I, unsigned int F>
 constexpr inline bool operator>=(const fixed<B, I, F>& x, const fixed<B, I, F>& y) noexcept
 {
     return x.raw_value() >= y.raw_value();
 }
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F > F2), fixed<B, I, F2>>::type
+operator>=(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return (x.raw_value() >> (F - F2)) >= y.raw_value();
+}
+
+template <typename B, typename I, unsigned int F, unsigned int F2>
+constexpr inline typename std::enable_if<(F < F2), fixed<B, I, F>>::type
+operator>=(const fixed<B, I, F>& x, const fixed<B, I, F2>& y) noexcept
+{
+    return x.raw_value() >= (y.raw_value() >> (F2 - F));
+}
+
+
+template <typename B, typename I, unsigned int F>
+constexpr bool is_32_base_v = (std::is_same<B,std::int32_t>::value || std::is_same<B,int>::value || std::is_same<B,unsigned int>::value || std::is_same<B,std::uint32_t>::value);
+
+
+template <typename B, typename I, unsigned int F>
+constexpr bool is_64_base_v = (std::is_same<B,std::int64_t>::value || std::is_same<B,long>::value || std::is_same<B,unsigned long>::value || std::is_same<B,std::uint64_t>::value);
+
 
 namespace detail
 {
@@ -408,7 +822,7 @@ struct numeric_limits<fpm::fixed<B,I,F>>
     static constexpr bool tinyness_before = false;
 
     static constexpr fpm::fixed<B,I,F> lowest() noexcept {
-        return fpm::fixed<B,I,F>::from_raw_value(std::numeric_limits<B>::lowest());
+        return fpm::fixed<B,I,F>::from_raw_value(std::numeric_limits<B>::lowest() + 1);
     };
 
     static constexpr fpm::fixed<B,I,F> min() noexcept {

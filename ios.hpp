@@ -18,6 +18,7 @@ template <typename CharT, typename B, typename I, unsigned int F>
 std::basic_ostream<CharT>& operator<<(std::basic_ostream<CharT>& os, fixed<B, I, F> x) noexcept
 {
     const auto uppercase = ((os.flags() & std::ios_base::uppercase) != 0);
+    const auto showbase = ((os.flags() & std::ios_base::showbase) != 0);
     const auto showpoint = ((os.flags() & std::ios_base::showpoint) != 0);
     const auto adjustfield = (os.flags() & std::ios_base::adjustfield);
     const auto width = os.width();
@@ -57,8 +58,8 @@ std::basic_ostream<CharT>& operator<<(std::basic_ostream<CharT>& os, fixed<B, I,
     // The value of the number is: raw / divisor * (10|2) ^ exponent
     // The base of the exponent is 2 in hexfloat mode, or 10 otherwise.
     struct number_t {
-        I raw;          // raw fixed-point value
-        I divisor;      // the divisor indicating the place of the decimal point
+        B raw;          // raw fixed-point value
+        B divisor;      // the divisor indicating the place of the decimal point
         int exponent;   // the exponent applied
     };
 
@@ -80,7 +81,7 @@ std::basic_ostream<CharT>& operator<<(std::basic_ostream<CharT>& os, fixed<B, I,
         return value;
     };
 
-    number_t value = { x.raw_value(), I{1} << F, 0};
+    number_t value = { x.raw_value(), B{1} << F, 0};
 
     auto base = B{10};
 
@@ -106,7 +107,7 @@ std::basic_ostream<CharT>& operator<<(std::basic_ostream<CharT>& os, fixed<B, I,
         {
             auto bit  = detail::find_highest_bit(value.raw);
             value.exponent = bit - F;    // exponent is applied to base 2
-            value.divisor = I{1} << bit; // divisor is at the highest bit, ensuring it starts with "1."
+            value.divisor = B{1} << bit; // divisor is at the highest bit, ensuring it starts with "1."
             precision = (bit + 3) / 4;   // precision is number of nibbles, so we show all of them
         }
         base = 16;
@@ -125,7 +126,7 @@ std::basic_ostream<CharT>& operator<<(std::basic_ostream<CharT>& os, fixed<B, I,
         // Fixed mode. Nothing to do.
         break;
 
-    default:
+    case 0:
     {
         // "auto" mode: figure out the exponent
         const number_t sci_value = as_scientific(value);
@@ -155,7 +156,7 @@ std::basic_ostream<CharT>& operator<<(std::basic_ostream<CharT>& os, fixed<B, I,
     }
 
     // Separate out the integral part of the number
-    I integral = value.raw / value.divisor;
+    B integral = value.raw / value.divisor;
     value.raw %= value.divisor;
 
     // Here we start printing the number itself
@@ -642,7 +643,7 @@ std::basic_istream<CharT, Traits>& operator>>(std::basic_istream<CharT, Traits>&
     // We've parsed all we need. Construct the value.
     if (exponent_overflow) {
         // Absolute exponent is too large
-        if (std::all_of(significand.begin(), significand.end(), [](unsigned char x){ return x == 0; })) {
+        if (std::all_of(significand.begin(), significand.end(), [](auto x){ return x == 0; })) {
             // Significand is zero. Exponent doesn't matter.
             x = fixed<B, I, F>(0);
         } else if (exponent_negate) {
@@ -676,6 +677,7 @@ std::basic_istream<CharT, Traits>& operator>>(std::basic_istream<CharT, Traits>&
     constexpr auto MaxValue = (I{1} << sizeof(B) * 8) - 1;
 
     // Parse the integer part
+    bool significand_overflow = false;
     I integer = 0;
     for (std::size_t i = 0; i < fraction_start; ++i) {
         if (integer > MaxInt / base) {
