@@ -8,12 +8,13 @@
 // #include <typeinfo>
 // #include <ostream>
 #include <stdlib.h>
-// #include <iostream>
+#include <iostream>
 #include <stack>
 #include <set>
 #include <map>
 #include <queue>
 #include <algorithm>
+#include <cmath>
 
 static int idx;
 template<typename T>
@@ -108,6 +109,7 @@ class Constant: public Placeholder<TYPE>{
 
 
 
+
 template<typename T>
 class Operator : public Node<T>{
   private:
@@ -169,32 +171,9 @@ class Operator : public Node<T>{
 
 };
 
-
-
-// class SizeTest{
-//   public:
-//   fpm::fixed_16_16 value;
-//   fpm::fixed_16_16 *parent;
-//   fpm::fixed_16_16 child;
-//   Node<float> * child2 = nullptr; // 4 bytes
-//   std::vector<Node<float> *> parents; // 12 bytes
-
-
-//   int add()
-//   {
-//     int a;
-//     int b;
-//     return 0;
-//   }
-// };
-
 template <typename TYPE>
 class Variable: public Placeholder<TYPE>{
-  private:
-    
-    // std::string name;
-    // TYPE gradient;
-    
+
   public:
     TYPE value;
     std::vector<Node<TYPE> *> parents;
@@ -233,20 +212,17 @@ class Variable: public Placeholder<TYPE>{
         inputs_of_parent.erase(position);
         inputs_of_parent.push_back(this);
       }
-      
-
+    
     }
 
     TYPE getValue() {
-      // std::cout<<"Called get value" << std::endl;
+      // std::cout<<"Called get value(Variable)" << std::endl;
       if(child)
       {
         return child->getValue();
       }
         return value;
     }
-
-
 
     template<typename current_type>
     current_type getValue2(){
@@ -306,6 +282,120 @@ class Variable: public Placeholder<TYPE>{
       // return 0;
     // }
 };
+
+
+template<typename T>
+class Log10: public Node<T>{
+
+  private:
+  template <class T_c = T,
+         typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
+  T_c log10_mem(T_c x)
+  {
+    std::cout << "Running std..." << std::endl;
+    return std::log10(x);
+  }
+
+  template <class T_c = T,
+         typename std::enable_if_t<std::is_base_of<fpm::fixedpoint_base, T_c>::value>* = nullptr>
+  T_c log10_mem(T_c x)
+  {
+    std::cout << "Running fixed..." << std::endl;
+    return fpm::log10(x);
+  }
+
+  public:
+
+  std::vector<Node<T> *> parents;
+  Node<T> * child = nullptr;
+
+  Log10(Variable<T> &v_in)
+  {
+    this->child = &v_in;
+  }
+  
+  
+  T getValue() override {
+    assert(this->child && "No child node found!!");
+    return log10_mem(this->child->getValue());
+  }
+
+  T diff(int wrt_id) override {
+    assert(this->child && "No child found !!");
+    return (1/this->child->getValue())*(this->child->diff(wrt_id));
+  }
+
+  T diff(Variable<T> &V_wrt)
+  {
+    return this->diff(V_wrt.get_unq_node_idx());
+  }
+
+  void register_parent( Node<T> * parent) override {
+      parents.push_back(parent);
+    }
+
+  std::vector<Node<T> *> const getParents()  override {
+      return parents;
+    }
+};
+
+
+template<typename T>
+class Exp: public Node<T>{
+
+  private:
+
+  template <class T_c = T,
+         typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
+  T_c exp_mem(T_c x)
+  {
+    std::cout << "Running std..." << std::endl;
+    return std::exp(x);
+  }
+
+  template <class T_c = T,
+         typename std::enable_if_t<std::is_base_of<fpm::fixedpoint_base, T_c>::value>* = nullptr>
+  T_c exp_mem(T_c x)
+  {
+    std::cout << "Running fixed..." << std::endl;
+    return fpm::exp(x);
+  }
+
+  public:
+  std::vector<Node<T> *> parents;
+  Node<T> * child = nullptr;
+  Exp(Variable<T> &v_in)
+  {
+    this->child = &v_in;
+  }
+
+  T getValue()
+  {
+    assert(this->child && "No child node found!!");
+    return exp_mem(this->child->getValue());
+  }
+
+  T diff(int wrt_id){
+    assert(this->child && "No child found !!");
+    return (this->child->getValue())*(this->child->diff(wrt_id));
+  }
+
+  T diff(Variable<T> &V_wrt)
+  {
+    return this->diff(V_wrt.get_unq_node_idx());
+  }
+
+  void register_parent( Node<T> * parent) override {
+    parents.push_back(parent);
+  }
+
+  std::vector<Node<T> *> const getParents()  override {
+    return parents;
+  }
+  
+};
+
+
 template <typename T>
 class add: public Operator<T> {
   public:
@@ -340,6 +430,8 @@ class add: public Operator<T> {
       return 1;
     }
 };
+
+
 
 template <typename T>
 class sub: public Operator<T> {
