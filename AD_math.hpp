@@ -26,10 +26,10 @@ typedef Variable<float> Varf;
 typedef Constant<fpm::fixed_16_16> const_fp;
 typedef Constant<float> const_fl;
 
-Constant<fpm::fixed_16_16> one_fp(1);
-Constant<float> one_f(1);
-Constant<fpm::fixed_16_16> zero_fp(0);
-Constant<float> zero_f(0);
+const_fp one_fp(1);
+Constant<float> one_f(1.00);
+const_fp zero_fp(0);
+Constant<float> zero_f(0.00);
 
 
 

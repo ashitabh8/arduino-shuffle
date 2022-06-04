@@ -2,13 +2,13 @@
 #include <vector>
 
 #include "./fixed.hpp"
-#include "./ios.hpp"
+// #include "./ios.hpp"
 #include "./math.hpp"
 
 // #include <typeinfo>
 // #include <ostream>
 #include <stdlib.h>
-#include <iostream>
+// #include <iostream>
 #include <stack>
 #include <set>
 #include <map>
@@ -51,7 +51,7 @@ template <typename TYPE>
 class Constant: public Placeholder<TYPE>{
   private:
     TYPE value;
-    std::string name;
+    // std::string name;
     int grad =0;
     std::vector<Node<TYPE> *> parents; // Shouldn't this be Operator instead?
   public:
@@ -61,10 +61,10 @@ class Constant: public Placeholder<TYPE>{
       value = num;
     }
 
-    Constant(TYPE val, std::string n){
-      value = val;
-      name = n;
-    }
+    // Constant(TYPE val, std::string n){
+    //   value = val;
+    //   name = n;
+    // }
 
     TYPE getValue()  {
       return value;
@@ -292,7 +292,7 @@ class Log10: public Node<T>{
          typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
   T_c log10_mem(T_c x)
   {
-    std::cout << "Running std..." << std::endl;
+    // std::cout << "Running std..." << std::endl;
     return std::log10(x);
   }
 
@@ -300,7 +300,7 @@ class Log10: public Node<T>{
          typename std::enable_if_t<std::is_base_of<fpm::fixedpoint_base, T_c>::value>* = nullptr>
   T_c log10_mem(T_c x)
   {
-    std::cout << "Running fixed..." << std::endl;
+    // std::cout << "Running fixed..." << std::endl;
     return fpm::log10(x);
   }
 
@@ -344,12 +344,11 @@ template<typename T>
 class Exp: public Node<T>{
 
   private:
-
   template <class T_c = T,
          typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
   T_c exp_mem(T_c x)
   {
-    std::cout << "Running std..." << std::endl;
+    // std::cout << "Running std..." << std::endl;
     return std::exp(x);
   }
 
@@ -357,7 +356,7 @@ class Exp: public Node<T>{
          typename std::enable_if_t<std::is_base_of<fpm::fixedpoint_base, T_c>::value>* = nullptr>
   T_c exp_mem(T_c x)
   {
-    std::cout << "Running fixed..." << std::endl;
+    // std::cout << "Running fixed..." << std::endl;
     return fpm::exp(x);
   }
 
@@ -402,13 +401,14 @@ class add: public Operator<T> {
     add(Node<T> &a, Node<T> &b) : Operator<T>(a, b){this->OP_ID =1;}
 
     T getValue() {
-      T temp{0};
-      for(auto curr_input: this->getInputs())
-      {
-        temp+= curr_input->getValue();
-      }
+      // T temp{0};
+      // for(auto curr_input: this->getInputs())
+      // {
+      //   temp+= curr_input->getValue();
+      // }
       // this->isComputed = true;
       // this->setOutput(temp);
+      T temp =(this->getInputs()).at(0)->getValue() + (this->getInputs()).at(1)->getValue();
       return temp;
     }
 
