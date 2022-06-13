@@ -67,14 +67,14 @@ struct EXP : public Node2<EXP<I>, typename I::type_>{
     template <class T_c = typename I::type_, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
     T_c exp_mem(T_c x) const
     {
-      std::cout << "Running std..." << std::endl;
+      //std::cout << "Running std..." << std::endl;
       return std::exp(x);
     }
 
     template <class T_c =  typename I::type_, typename std::enable_if_t<std::is_base_of<fpm::fixedpoint_base, T_c>::value>* = nullptr>
     T_c exp_mem(T_c x) const
     {
-      std::cout << "Running fixed..." << std::endl;
+      //std::cout << "Running fixed..." << std::endl;
       return fpm::exp(x);
     }
 
