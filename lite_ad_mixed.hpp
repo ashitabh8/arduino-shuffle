@@ -81,13 +81,33 @@ struct ADD : public Node2<ADD<L,R,output>, output>{
 
   // const Node2<L,typename L::type_>& LHS;
   // const Node2<R,typename R::type_>& RHS;
-  const L& LHS;
-  const R& RHS;
+  // const L& LHS;
+  // const R& RHS;
+  typedef typename std::conditional<
+    std::is_same<L, Variable<typename L::type_>>::value,
+    const Variable<typename L::type_>&,
+    L
+    >::type Ltype;
+
+  typedef typename std::conditional<
+    std::is_same<R, Variable<typename R::type_>>::value,
+    const Variable<typename R::type_>&,
+    R
+    >::type Rtype;
+
+
+   Ltype LHS;
+   Rtype RHS;
   public:
   // mutable int counter_id = -99;
+
+    
     static const int check = 8 ;
     // constexpr ADD(const L& Lin,const R& Rin): LHS(Lin), RHS(Rin){}
-    constexpr ADD(const L& Lin, const R& Rin): LHS(Lin), RHS(Rin){}
+    // ADD(L && Lin, R && Rin): LHS{std::forward<L>(Lin)}, RHS{std::forward<R>(Rin)}{}
+    // ADD(Variable<typename L::type_>& Lin, Variable<typename R::type_>& Rin): LHS{Lin}, RHS{Rin}{}
+    ADD( Ltype Lin, Rtype Rin) : LHS{Lin}, RHS{Rin} {}
+    
     using type_ = output;
     constexpr inline type_ value() const {
       // std::cout << "calling value in ADD: " <<  "\n";
@@ -106,10 +126,14 @@ struct ADD : public Node2<ADD<L,R,output>, output>{
     }
 };
 
+// template<typename L, typename R, typename output>
+// ADD(Variable<typename L::type_>& , Variable<typename R::type_>& ) -> ADD<Variable<typename L::type_> &, Variable<typename R::type_>&, output>; 
+
+
 template< typename I, typename output>
 struct EXP : public Node2<EXP<I,output>, output>{
   private:
-    const I& input_obj;
+    I input_obj;
     template <class T_c =  output, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
     T_c exp_mem(T_c x) const
     {
@@ -125,7 +149,7 @@ struct EXP : public Node2<EXP<I,output>, output>{
     }
 
   public:
-    constexpr EXP(const I& in_): input_obj(in_) {}
+    constexpr EXP(I in_): input_obj(in_) {}
     using type_ = output;
     constexpr inline type_ value() const {
       // std::cout << "calling value in ADD: " <<  "\n";
@@ -368,7 +392,6 @@ struct SUB : public Node2<SUB<L,R,output>, output>{
 //   return a;
 // }
 
-
 template <typename out_t, typename L, typename R> inline
 auto add_ty(const L& lhs_in, const R&rhs_in)
 {
@@ -376,9 +399,11 @@ auto add_ty(const L& lhs_in, const R&rhs_in)
 }
 
 template <typename L, typename R> inline
-constexpr auto operator+(const L& lhs , const R& rhs) {
-  auto a = ADD<L,R,typename L::type_>(lhs,rhs);
-  return a;
+auto operator+(const L& lhs , const R& rhs) { // TODO: Implement precedence of types
+  // using Ltype = typename L&&;
+  // using Rtype = typename R&&;
+  return ADD<L,R,typename L::type_>(lhs,rhs);
+  // return a;
 }
 
 template <typename out_t, typename I_t> inline
@@ -386,6 +411,13 @@ constexpr const EXP<I_t, out_t> exp_ty(const I_t& in_)
 {
     return EXP<I_t, out_t>(in_);
 }
+
+template <typename I_t> inline
+constexpr auto exp(const I_t& in_)
+{
+    return EXP<I_t, typename I_t::type_>(in_);
+}
+
 
 template <typename I> inline
 constexpr const TAN<I> tan(const I& in_)
