@@ -79,10 +79,6 @@ struct Constant : public Node2<Constant<T>, T>{
 template<typename L, typename R, typename output>
 struct ADD : public Node2<ADD<L,R,output>, output>{
 
-  // const Node2<L,typename L::type_>& LHS;
-  // const Node2<R,typename R::type_>& RHS;
-  // const L& LHS;
-  // const R& RHS;
   typedef typename std::conditional<
     std::is_same<L, Variable<typename L::type_>>::value,
     const Variable<typename L::type_>&,
@@ -99,14 +95,9 @@ struct ADD : public Node2<ADD<L,R,output>, output>{
    Ltype LHS;
    Rtype RHS;
   public:
-  // mutable int counter_id = -99;
-
-    
     static const int check = 8 ;
-    // constexpr ADD(const L& Lin,const R& Rin): LHS(Lin), RHS(Rin){}
-    // ADD(L && Lin, R && Rin): LHS{std::forward<L>(Lin)}, RHS{std::forward<R>(Rin)}{}
-    // ADD(Variable<typename L::type_>& Lin, Variable<typename R::type_>& Rin): LHS{Lin}, RHS{Rin}{}
-    ADD( Ltype Lin, Rtype Rin) : LHS{Lin}, RHS{Rin} {}
+   
+    ADD( Ltype Lin,  Rtype Rin) : LHS{Lin}, RHS{Rin} {}
     
     using type_ = output;
     constexpr inline type_ value() const {
@@ -120,20 +111,22 @@ struct ADD : public Node2<ADD<L,R,output>, output>{
     }
 
     template<typename DIFFTY>
-    constexpr inline type_ diff(Variable<DIFFTY> wrt_diff)
+    constexpr inline type_ diff(Variable<DIFFTY> &wrt_diff)
     {
       return this->diff(wrt_diff.Var_ID);
     }
 };
 
-// template<typename L, typename R, typename output>
-// ADD(Variable<typename L::type_>& , Variable<typename R::type_>& ) -> ADD<Variable<typename L::type_> &, Variable<typename R::type_>&, output>; 
-
 
 template< typename I, typename output>
 struct EXP : public Node2<EXP<I,output>, output>{
   private:
-    I input_obj;
+  typedef typename std::conditional<
+    std::is_same<I, Variable<typename I::type_>>::value,
+    const Variable<typename I::type_>&,
+    I
+    >::type Itype;
+    Itype input_obj;
     template <class T_c =  output, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
     T_c exp_mem(T_c x) const
     {
@@ -149,7 +142,7 @@ struct EXP : public Node2<EXP<I,output>, output>{
     }
 
   public:
-    constexpr EXP(I in_): input_obj(in_) {}
+    constexpr EXP(Itype in_): input_obj(in_) {}
     using type_ = output;
     constexpr inline type_ value() const {
       // std::cout << "calling value in ADD: " <<  "\n";
@@ -173,7 +166,12 @@ struct EXP : public Node2<EXP<I,output>, output>{
 template< typename I, typename output>
 struct LOG10 : public Node2<LOG10<I,output>, output>{
   private:
-    const I& input_obj;
+    typedef typename std::conditional<
+    std::is_same<I, Variable<typename I::type_>>::value,
+    const Variable<typename I::type_>&,
+    I
+    >::type Itype;
+    Itype input_obj;
     template <class T_c = output, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
     T_c log10_mem(T_c x) const
     {
@@ -187,7 +185,7 @@ struct LOG10 : public Node2<LOG10<I,output>, output>{
     }
 
   public:
-    constexpr LOG10(const I& in_): input_obj(in_) {}
+    constexpr LOG10(Itype in_): input_obj(in_) {}
     using type_ = output;
     // constants
     type_ one = type_{1};
@@ -203,7 +201,7 @@ struct LOG10 : public Node2<LOG10<I,output>, output>{
     }
 
     template<typename DIFFTY>
-    constexpr inline type_ diff(Variable<DIFFTY> wrt_diff)
+    constexpr inline type_ diff(Variable<DIFFTY> &wrt_diff)
     {
       return this->diff(wrt_diff.Var_ID);
     }
@@ -311,11 +309,24 @@ struct SQRT : public Node2<SQRT<I>, typename I::type_>{
 template<typename L, typename R, typename output>
 struct MUL : public Node2<MUL<L,R, output>, output>{
 
-  const L& LHS;
-  const R& RHS;
+  typedef typename std::conditional<
+    std::is_same<L, Variable<typename L::type_>>::value,
+    const Variable<typename L::type_>&,
+    L
+    >::type Ltype;
+
+  typedef typename std::conditional<
+    std::is_same<R, Variable<typename R::type_>>::value,
+    const Variable<typename R::type_>&,
+    R
+    >::type Rtype;
+
+
+   Ltype LHS;
+   Rtype RHS;
 
   public:
-    constexpr MUL(const L& Lin, const R& Rin): LHS(Lin), RHS(Rin){}
+    constexpr MUL(Ltype Lin, Rtype Rin): LHS(Lin), RHS(Rin){}
     using type_ = output;
     constexpr inline type_ value() const {
       return type_{LHS.value()} * type_{RHS.value()};
@@ -328,7 +339,7 @@ struct MUL : public Node2<MUL<L,R, output>, output>{
     }
 
     template<typename DIFFTY>
-    constexpr inline type_ diff(Variable<DIFFTY> wrt_diff)
+    constexpr inline type_ diff(Variable<DIFFTY> &wrt_diff)
     {
       return this->diff(wrt_diff.Var_ID);
     }
@@ -337,11 +348,24 @@ struct MUL : public Node2<MUL<L,R, output>, output>{
 template<typename L, typename R, typename output>
 struct DIV : public Node2<DIV<L,R,output>, output>{
 
-  const L& NUM;
-  const R& DEN;
+  typedef typename std::conditional<
+    std::is_same<L, Variable<typename L::type_>>::value,
+    const Variable<typename L::type_>&,
+    L
+    >::type Ltype;
+
+  typedef typename std::conditional<
+    std::is_same<R, Variable<typename R::type_>>::value,
+    const Variable<typename R::type_>&,
+    R
+    >::type Rtype;
+
+
+   Ltype NUM;
+   Rtype DEN;
 
   public:
-    constexpr DIV(const L& Lin, const R& Rin): NUM(Lin), DEN(Rin){}
+    constexpr DIV(Ltype Lin, Rtype Rin): NUM(Lin), DEN(Rin){}
     using type_ = output;
     constexpr type_ value() const {
       return type_{NUM.value()} / type_{DEN.value()};
@@ -354,7 +378,7 @@ struct DIV : public Node2<DIV<L,R,output>, output>{
     }
 
     template<typename DIFFTY>
-    constexpr inline type_ diff(Variable<DIFFTY> wrt_diff)
+    constexpr inline type_ diff(Variable<DIFFTY> &wrt_diff)
     {
       return this->diff(wrt_diff.Var_ID);
     }
@@ -363,11 +387,24 @@ struct DIV : public Node2<DIV<L,R,output>, output>{
 template<typename L, typename R, typename output>
 struct SUB : public Node2<SUB<L,R,output>, output>{
 
-  const L& LHS;
-  const R& RHS;
+  typedef typename std::conditional<
+    std::is_same<L, Variable<typename L::type_>>::value,
+    const Variable<typename L::type_>&,
+    L
+    >::type Ltype;
+
+  typedef typename std::conditional<
+    std::is_same<R, Variable<typename R::type_>>::value,
+    const Variable<typename R::type_>&,
+    R
+    >::type Rtype;
+
+
+   Ltype LHS;
+   Rtype RHS;
 
   public:
-    constexpr SUB(const L& Lin, const R& Rin): LHS(Lin), RHS(Rin){}
+    constexpr SUB(Ltype Lin, Rtype Rin): LHS(Lin), RHS(Rin){}
     using type_ = output;
     constexpr type_ value() const {
       return type_{LHS.value()} - type_{RHS.value()};
@@ -379,18 +416,11 @@ struct SUB : public Node2<SUB<L,R,output>, output>{
     }
 
     template<typename DIFFTY>
-    constexpr inline type_ diff(Variable<DIFFTY> wrt_diff)
+    constexpr inline type_ diff(Variable<DIFFTY> &wrt_diff)
     {
       return this->diff(wrt_diff.Var_ID);
     }
 };
-
-
-// template <typename L, typename R> inline
-// constexpr ADD<L,R> operator+(const L& lhs , const R& rhs) {
-//   auto a = ADD<L,R>(lhs,rhs);
-//   return a;
-// }
 
 template <typename out_t, typename L, typename R> inline
 auto add_ty(const L& lhs_in, const R&rhs_in)
@@ -400,10 +430,7 @@ auto add_ty(const L& lhs_in, const R&rhs_in)
 
 template <typename L, typename R> inline
 auto operator+(const L& lhs , const R& rhs) { // TODO: Implement precedence of types
-  // using Ltype = typename L&&;
-  // using Rtype = typename R&&;
   return ADD<L,R,typename L::type_>(lhs,rhs);
-  // return a;
 }
 
 template <typename out_t, typename I_t> inline
@@ -481,53 +508,3 @@ template <typename L, typename R> inline
 constexpr auto operator-(const L& lhs , const R& rhs){
   return SUB<L,R, typename L::type_>(lhs,rhs);
 }
-
-
-// int main()
-// {
-
-//     Variable<float> v(2);
-//     // std::cout << "v value: " << v.value_ << "\n";
-//     // v.set_value(2.5);
-//     // std::cout << "v value: " << v.value_ << "\n";
-
-
-//     // static constexpr const ADD<Variable<float>, Variable<float>> add = ADD<Variable<float>, Variable<float>>(v,v);
-//     // static constexpr auto exp_v = EXP<Variable<float>>(v);
-//     // std::cout << "Exp value: " << exp_v.value();
-//     // static constexpr const Node2<Variable<float>, float> &n1 = v;
-//     // auto v_p_exp_v = v + exp(v);
-//     // std::cout << "v + exp(v): " << v_p_exp_v.value() << "\n";
-//     // static constexpr ADD<Variable<float>, ADD<Variable<float>, Variable<float>>> add_2 = ADD<Variable<float>, ADD<Variable<float>, Variable<float>>>(v, add);
-//     // static constexpr auto answer = add_2.value();
-
-
-//     auto add_1 =  v + v;
-//     std::cout<< "add v+v: " << add_1.value() << "\n";
-//     v.set_value(2.5);
-//     std::cout<< "add v+v: " << add_1.value() << "\n";
-
-//     auto sin_v = sin(v);
-//     std::cout << "sin(v): " << sin_v.value() << "\n";
-
-//     auto log10_v = log10(v);
-//     std::cout << "log(v): " <<  log10_v.value() << "\n";
-
-//     auto cos_v = cos(v);
-//     std::cout << "cos(v): " << cos_v.value() << "\n";
-
-//     auto tan_v = tan(v);
-//     std::cout << "tan(v): " << tan_v.value() << "\n";
-
-//     auto sqrt_v = sqrt(v);
-//     std::cout << "sqrt(v): " << sqrt_v.value() << "\n";
-//     // std::cout << "sin - vanilla: " << std::sin(2.5) << "\n";
-//     // static constexpr auto exp_v = exp(v);
-//     // static constexpr auto add_2 = exp_v + v;
-//     // static constexpr auto mul_v = add_2 * v;
-//     // // static_assert(add_2.check ==8 && "check is this is static");
-//     // std::cout << "add: " << mul_v.value() << "\n";
-//     // std::cout << "add: " << answer << "\n";
-//     // std::cout << "v type_: " << std::is_floating_point<v::value>::value << "\n";
-//     return 0;
-// }
