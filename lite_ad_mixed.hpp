@@ -58,20 +58,16 @@ struct Constant : public Node2<Constant<T>, T>{
   public:
     using type_ = T;
     mutable type_ value_;
-    
-
     constexpr Constant ():value_(0){}
     constexpr Constant(type_ val_): value_(val_) {}
 
     constexpr inline type_ value() const
     {
-      // std::cout <<" value in variable : " << value_ << "\n";
       return value_;
     }
 
     constexpr inline type_ diff(int wrt_v) const
     {
-      // std::cout <<" value in variable : " << value_ << "\n";
       return type_{0};
     }
 };
@@ -82,13 +78,19 @@ struct ADD : public Node2<ADD<L,R,output>, output>{
   typedef typename std::conditional<
     std::is_same<L, Variable<typename L::type_>>::value,
     const Variable<typename L::type_>&,
-    L
+      typename std::conditional<
+      std::is_same<L, Constant<typename L::type_>>::value,
+      const Constant<typename L::type_>&,
+      L>::type
     >::type Ltype;
 
   typedef typename std::conditional<
     std::is_same<R, Variable<typename R::type_>>::value,
     const Variable<typename R::type_>&,
-    R
+    typename std::conditional<
+    std::is_same<R, Constant<typename R::type_>>::value,
+    const Constant<typename R::type_>&,
+    R>::type
     >::type Rtype;
 
 
@@ -124,7 +126,10 @@ struct EXP : public Node2<EXP<I,output>, output>{
   typedef typename std::conditional<
     std::is_same<I, Variable<typename I::type_>>::value,
     const Variable<typename I::type_>&,
-    I
+      typename std::conditional<
+      std::is_same<I, Constant<typename I::type_>>::value,
+      const Constant<typename I::type_>&,
+      I>::type
     >::type Itype;
     Itype input_obj;
     template <class T_c =  output, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
@@ -161,15 +166,16 @@ struct EXP : public Node2<EXP<I,output>, output>{
     }
 };
 
-
-
 template< typename I, typename output>
 struct LOG10 : public Node2<LOG10<I,output>, output>{
   private:
     typedef typename std::conditional<
     std::is_same<I, Variable<typename I::type_>>::value,
     const Variable<typename I::type_>&,
-    I
+      typename std::conditional<
+      std::is_same<I, Constant<typename I::type_>>::value,
+      const Constant<typename I::type_>&,
+      I>::type
     >::type Itype;
     Itype input_obj;
     template <class T_c = output, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
@@ -312,13 +318,19 @@ struct MUL : public Node2<MUL<L,R, output>, output>{
   typedef typename std::conditional<
     std::is_same<L, Variable<typename L::type_>>::value,
     const Variable<typename L::type_>&,
-    L
+    typename std::conditional<
+    std::is_same<L, Constant<typename L::type_>>::value,
+    const Constant<typename L::type_>&,
+    L>::type
     >::type Ltype;
 
   typedef typename std::conditional<
     std::is_same<R, Variable<typename R::type_>>::value,
     const Variable<typename R::type_>&,
-    R
+    typename std::conditional<
+    std::is_same<R, Constant<typename R::type_>>::value,
+    const Constant<typename R::type_>&,
+    R>::type
     >::type Rtype;
 
 
@@ -351,13 +363,19 @@ struct DIV : public Node2<DIV<L,R,output>, output>{
   typedef typename std::conditional<
     std::is_same<L, Variable<typename L::type_>>::value,
     const Variable<typename L::type_>&,
-    L
+    typename std::conditional<
+    std::is_same<L, Constant<typename L::type_>>::value,
+    const Constant<typename L::type_>&,
+    L>::type
     >::type Ltype;
 
   typedef typename std::conditional<
     std::is_same<R, Variable<typename R::type_>>::value,
     const Variable<typename R::type_>&,
-    R
+    typename std::conditional<
+    std::is_same<R, Constant<typename R::type_>>::value,
+    const Constant<typename R::type_>&,
+    R>::type
     >::type Rtype;
 
 
@@ -390,13 +408,19 @@ struct SUB : public Node2<SUB<L,R,output>, output>{
   typedef typename std::conditional<
     std::is_same<L, Variable<typename L::type_>>::value,
     const Variable<typename L::type_>&,
-    L
+    typename std::conditional<
+    std::is_same<L, Constant<typename L::type_>>::value,
+    const Constant<typename L::type_>&,
+    L>::type
     >::type Ltype;
 
   typedef typename std::conditional<
     std::is_same<R, Variable<typename R::type_>>::value,
     const Variable<typename R::type_>&,
-    R
+    typename std::conditional<
+    std::is_same<R, Constant<typename R::type_>>::value,
+    const Constant<typename R::type_>&,
+    R>::type
     >::type Rtype;
 
 
@@ -508,3 +532,13 @@ template <typename L, typename R> inline
 constexpr auto operator-(const L& lhs , const R& rhs){
   return SUB<L,R, typename L::type_>(lhs,rhs);
 }
+
+
+
+// Some useful constants
+
+// 1/sqrt(2*pi)
+
+#define one_by_sqrt_2_pi 0.3989422804014327
+
+// Constant<float> one_by_sqrt_2_pi(0.3989422804014327);
