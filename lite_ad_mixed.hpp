@@ -36,6 +36,7 @@ struct Variable : public Node2<Variable<T>, T>{
 
     void set_value(type_ in_)
     {
+      std::cout << "variable set value \n";
         value_ = in_;
     }
 
@@ -69,6 +70,12 @@ struct Constant : public Node2<Constant<T>, T>{
     constexpr inline type_ diff(int wrt_v) const
     {
       return type_{0};
+    }
+
+    void set_value(type_ in_)
+    {
+      std::cout << "constant set value \n";
+        value_ = in_;
     }
 };
 
