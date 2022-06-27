@@ -9,13 +9,18 @@ static constexpr int counter = 0;
 
  int var_id_counter = 0;
 
+
+class ADBase{};
+
 template <typename M, typename T>
-class Node2{
+class Node2 : public ADBase{
   public:
     using type_ = T;
     constexpr const M& cast() const {return static_cast<const M&>(*this);}
     constexpr type_ value() const {return cast().value();}
 };
+
+class AD_OP_Base{};
 
 template <typename T>
 struct Variable : public Node2<Variable<T>, T>{
@@ -80,26 +85,36 @@ struct Constant : public Node2<Constant<T>, T>{
 };
 
 template<typename L, typename R, typename output>
-struct ADD : public Node2<ADD<L,R,output>, output>{
+struct ADD : public Node2<ADD<L,R,output>, output>, public AD_OP_Base{
+
 
   typedef typename std::conditional<
-    std::is_same<L, Variable<typename L::type_>>::value,
-    const Variable<typename L::type_>&,
-      typename std::conditional<
-      std::is_same<L, Constant<typename L::type_>>::value,
-      const Constant<typename L::type_>&,
-      L>::type
-    >::type Ltype;
+  std::is_base_of<AD_OP_Base, L>::value,
+  L,
+  const L& >::type Ltype;
 
   typedef typename std::conditional<
-    std::is_same<R, Variable<typename R::type_>>::value,
-    const Variable<typename R::type_>&,
-    typename std::conditional<
-    std::is_same<R, Constant<typename R::type_>>::value,
-    const Constant<typename R::type_>&,
-    R>::type
-    >::type Rtype;
+  std::is_base_of<AD_OP_Base, R>::value,
+  R,
+  const R& >::type Rtype;
 
+  // typedef typename std::conditional<
+  //   std::is_same<L, Variable<typename L::type_>>::value,
+  //   const Variable<typename L::type_>&,
+  //     typename std::conditional<
+  //     std::is_same<L, Constant<typename L::type_>>::value,
+  //     const Constant<typename L::type_>&,
+  //     L>::type
+  //   >::type Ltype;
+
+  // typedef typename std::conditional<
+  //   std::is_same<R, Variable<typename R::type_>>::value,
+  //   const Variable<typename R::type_>&,
+  //   typename std::conditional<
+  //   std::is_same<R, Constant<typename R::type_>>::value,
+  //   const Constant<typename R::type_>&,
+  //   R>::type
+  //   >::type Rtype;
 
    Ltype LHS;
    Rtype RHS;
@@ -128,16 +143,12 @@ struct ADD : public Node2<ADD<L,R,output>, output>{
 
 
 template< typename I, typename output>
-struct EXP : public Node2<EXP<I,output>, output>{
+struct EXP : public Node2<EXP<I,output>, output>,public AD_OP_Base{
   private:
   typedef typename std::conditional<
-    std::is_same<I, Variable<typename I::type_>>::value,
-    const Variable<typename I::type_>&,
-      typename std::conditional<
-      std::is_same<I, Constant<typename I::type_>>::value,
-      const Constant<typename I::type_>&,
-      I>::type
-    >::type Itype;
+  std::is_base_of<AD_OP_Base, I>::value,
+  I,
+  const I& >::type Itype;
     Itype input_obj;
     template <class T_c =  output, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
     T_c exp_mem(T_c x) const
@@ -174,16 +185,12 @@ struct EXP : public Node2<EXP<I,output>, output>{
 };
 
 template< typename I, typename output>
-struct LOG10 : public Node2<LOG10<I,output>, output>{
+struct LOG10 : public Node2<LOG10<I,output>, output>, public AD_OP_Base{
   private:
     typedef typename std::conditional<
-    std::is_same<I, Variable<typename I::type_>>::value,
-    const Variable<typename I::type_>&,
-      typename std::conditional<
-      std::is_same<I, Constant<typename I::type_>>::value,
-      const Constant<typename I::type_>&,
-      I>::type
-    >::type Itype;
+  std::is_base_of<AD_OP_Base, I>::value,
+  I,
+  const I& >::type Itype;
     Itype input_obj;
     template <class T_c = output, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr>
     T_c log10_mem(T_c x) const
@@ -222,7 +229,7 @@ struct LOG10 : public Node2<LOG10<I,output>, output>{
 
 
 template< typename I>
-struct SIN : public Node2<SIN<I>, typename I::type_>{
+struct SIN : public Node2<SIN<I>, typename I::type_>,public AD_OP_Base{
   private:
     const I& input_obj;
     template <class T_c = typename I::type_, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr> inline 
@@ -247,7 +254,7 @@ struct SIN : public Node2<SIN<I>, typename I::type_>{
 
 
 template< typename I>
-struct COS : public Node2<COS<I>, typename I::type_>{
+struct COS : public Node2<COS<I>, typename I::type_>,public AD_OP_Base{
   private:
     const I& input_obj;
     template <class T_c = typename I::type_, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr> inline 
@@ -271,7 +278,7 @@ struct COS : public Node2<COS<I>, typename I::type_>{
 };
 
 template< typename I>
-struct TAN : public Node2<TAN<I>, typename I::type_>{
+struct TAN : public Node2<TAN<I>, typename I::type_>,public AD_OP_Base{
   private:
     const I& input_obj;
     template <class T_c = typename I::type_, typename std::enable_if_t<std::is_arithmetic<T_c>::value>* = nullptr> inline 
@@ -320,25 +327,17 @@ struct SQRT : public Node2<SQRT<I>, typename I::type_>{
 };
 
 template<typename L, typename R, typename output>
-struct MUL : public Node2<MUL<L,R, output>, output>{
+struct MUL : public Node2<MUL<L,R, output>, output>,public AD_OP_Base{
 
   typedef typename std::conditional<
-    std::is_same<L, Variable<typename L::type_>>::value,
-    const Variable<typename L::type_>&,
-    typename std::conditional<
-    std::is_same<L, Constant<typename L::type_>>::value,
-    const Constant<typename L::type_>&,
-    L>::type
-    >::type Ltype;
+  std::is_base_of<AD_OP_Base, L>::value,
+  L,
+  const L& >::type Ltype;
 
   typedef typename std::conditional<
-    std::is_same<R, Variable<typename R::type_>>::value,
-    const Variable<typename R::type_>&,
-    typename std::conditional<
-    std::is_same<R, Constant<typename R::type_>>::value,
-    const Constant<typename R::type_>&,
-    R>::type
-    >::type Rtype;
+  std::is_base_of<AD_OP_Base, R>::value,
+  R,
+  const R& >::type Rtype;
 
 
    Ltype LHS;
@@ -365,25 +364,17 @@ struct MUL : public Node2<MUL<L,R, output>, output>{
 };
 
 template<typename L, typename R, typename output>
-struct DIV : public Node2<DIV<L,R,output>, output>{
+struct DIV : public Node2<DIV<L,R,output>, output>,public AD_OP_Base{
 
   typedef typename std::conditional<
-    std::is_same<L, Variable<typename L::type_>>::value,
-    const Variable<typename L::type_>&,
-    typename std::conditional<
-    std::is_same<L, Constant<typename L::type_>>::value,
-    const Constant<typename L::type_>&,
-    L>::type
-    >::type Ltype;
+  std::is_base_of<AD_OP_Base, L>::value,
+  L,
+  const L& >::type Ltype;
 
   typedef typename std::conditional<
-    std::is_same<R, Variable<typename R::type_>>::value,
-    const Variable<typename R::type_>&,
-    typename std::conditional<
-    std::is_same<R, Constant<typename R::type_>>::value,
-    const Constant<typename R::type_>&,
-    R>::type
-    >::type Rtype;
+  std::is_base_of<AD_OP_Base, R>::value,
+  R,
+  const R& >::type Rtype;
 
 
    Ltype NUM;
@@ -410,25 +401,17 @@ struct DIV : public Node2<DIV<L,R,output>, output>{
 };
 
 template<typename L, typename R, typename output>
-struct SUB : public Node2<SUB<L,R,output>, output>{
+struct SUB : public Node2<SUB<L,R,output>, output>,public AD_OP_Base{
 
   typedef typename std::conditional<
-    std::is_same<L, Variable<typename L::type_>>::value,
-    const Variable<typename L::type_>&,
-    typename std::conditional<
-    std::is_same<L, Constant<typename L::type_>>::value,
-    const Constant<typename L::type_>&,
-    L>::type
-    >::type Ltype;
+  std::is_base_of<AD_OP_Base, L>::value,
+  L,
+  const L& >::type Ltype;
 
   typedef typename std::conditional<
-    std::is_same<R, Variable<typename R::type_>>::value,
-    const Variable<typename R::type_>&,
-    typename std::conditional<
-    std::is_same<R, Constant<typename R::type_>>::value,
-    const Constant<typename R::type_>&,
-    R>::type
-    >::type Rtype;
+  std::is_base_of<AD_OP_Base, R>::value,
+  R,
+  const R& >::type Rtype;
 
 
    Ltype LHS;
