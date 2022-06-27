@@ -36,7 +36,7 @@ struct Variable : public Node2<Variable<T>, T>{
 
     void set_value(type_ in_)
     {
-      std::cout << "variable set value \n";
+      // std::cout << "variable set value \n";
         value_ = in_;
     }
 

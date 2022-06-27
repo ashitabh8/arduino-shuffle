@@ -540,8 +540,21 @@ fixed<B, I, F> sqrt(fixed<B, I, F> x) noexcept
     // even 1 iteration gives decent accuracy 
     // verify exactly how much we need
 
-    res -= (res*res - x) / (2*res);
-    res -= (res*res - x) / (2*res);
+    // res -= (res*res - x) / (2*res);
+    // res -= (res*res - x) / (2*res);
+    // res -= (res*res - x) / (2*res);
+    // res -= (res*res - x) / (2*res);
+    // res -= (res*res - x) / (2*res);
+    // res -= (res*res - x) / (2*res);
+    // res -= (res*res - x) / (2*res);
+
+    Fixed error =  Fixed(0.001);
+    int iteration = 0;
+    const Fixed half = Fixed(0.5);
+    while( (iteration++ < 8) && (fpm::abs(res*res - x) >= error))
+    {
+        res = half * (res + (x/res));
+    }
 
     return res;
 
